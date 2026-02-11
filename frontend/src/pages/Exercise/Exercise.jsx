@@ -1,5 +1,5 @@
 // Importing necessary libraries and components
-import {Component} from 'react'
+import { Component } from 'react'
 import PropTypes from 'prop-types'
 import * as tf from '@tensorflow/tfjs'
 import '@tensorflow/tfjs-backend-webgl'
@@ -15,11 +15,11 @@ import TopBar from '../../components/TopBar.jsx'
 import VideoDisplay from '../../components/VideoDisplay';
 
 // Renderer and utility functions
-import {RendererCanvas2d} from './renderer_canvas2d'
+import { RendererCanvas2d } from './renderer_canvas2d'
 import { csvToJSON } from './utils'
 
 // Higher order component for routing
-import {withRouter} from './withRouter.jsx'
+import { withRouter } from './withRouter.jsx'
 
 // API functions
 import { api } from '../../api';
@@ -101,8 +101,8 @@ class Exercise extends Component {
     }
 
     try {
-      const detectorConfig = {modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER}
-      
+      const detectorConfig = { modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER }
+
       // Set the tf backend
       console.log("awaiting tf")
       await tf.setBackend('webgl')
@@ -133,7 +133,7 @@ class Exercise extends Component {
         'Browser API navigator.mediaDevices.getUserMedia not available'
       )
     }
-    const {videoWidth, videoHeight} = this.props
+    const { videoWidth, videoHeight } = this.props
     const video = this.video
     video.width = videoWidth
     video.height = videoHeight
@@ -185,14 +185,14 @@ class Exercise extends Component {
       const referenceJointPositions = csvToJSON(csvText)
       const referenceDF = new DataFrame(referenceJointPositions)
       this.setState({ referenceDF })
-      console.log(referenceDF.to_json({orient: 'columns'}))
+      console.log(referenceDF.to_json({ orient: 'columns' }))
     } catch (error) {
       console.error('Error loading reference joint positions:', error)
     }
   }
 
   detectPose() {
-    const {videoWidth, videoHeight} = this.props
+    const { videoWidth, videoHeight } = this.props
     const canvas = this.canvas
     const canvasContext = canvas.getContext('2d')
 
@@ -208,29 +208,29 @@ class Exercise extends Component {
       flipHorizontal,
       flipVertical,
       videoWidth,
-      videoHeight, 
-      showVideo, 
-      } = this.props
+      videoHeight,
+      showVideo,
+    } = this.props
 
     const movenetModel = this.movenet
     const video = this.video
-    
+
     // Function to find pose in each frame
     const findPoseDetectionFrame = async () => {
       let poses = null
 
       // Estimate poses in the current video frame
-      poses = await movenetModel.estimatePoses(video, {flipHorizontal: flipHorizontal, flipVertical: flipVertical})
-      
+      poses = await movenetModel.estimatePoses(video, { flipHorizontal: flipHorizontal, flipVertical: flipVertical })
+
       let normalizedKeypoints = null
-      if(poses[0]) {
+      if (poses[0]) {
         // Convert keypoints to normalized keypoints
         normalizedKeypoints = poseDetection.calculators.keypointsToNormalizedKeypoints(poses[0].keypoints, video);
       }
-      
+
       // If the exercise data is being saved, populate the DataFrame
       if (this.state.isSaving) {
-        if(poses[0]) {
+        if (poses[0]) {
           this.populateDataFrame(normalizedKeypoints)
         }
         if (!this.state.startTime) {
@@ -256,7 +256,7 @@ class Exercise extends Component {
       }
       // Request the next animation frame
       requestAnimationFrame(findPoseDetectionFrame)
-    } 
+    }
     // Call the function to start pose detection
     findPoseDetectionFrame()
   }
@@ -274,7 +274,7 @@ class Exercise extends Component {
     const frameDataFrame = new DataFrame([frameData])
     this.setState({ exerciseDf: this.state.exerciseDf.append(frameDataFrame, true) }, () => {
       // If the length of the exercise DataFrame is a multiple of 30 (one sec passed if fps=30)
-      if(this.state.exerciseDf.length >= 30 && this.state.exerciseDf.length % 30 === 0) {
+      if (this.state.exerciseDf.length >= 30 && this.state.exerciseDf.length % 30 === 0) {
         // Compare the current joint positions with the reference
         this.compareJointsWithReference()
       }
@@ -285,7 +285,7 @@ class Exercise extends Component {
   getDTWCost = async (currentJointValues, referenceJointValues) => {
     // Get the exercise information from the router state
     const exerciseInfo = this.props.router.location.state.exercise
-    
+
     try {
       const response = await api.post(`/api/feedback/${exerciseInfo.exercise_id}/`, {
         referenceJointValues: referenceJointValues,
@@ -303,11 +303,11 @@ class Exercise extends Component {
     } catch (error) {
       console.error('Failed to fetch dtw:', error)
     }
-   }
-  
+  }
+
   // Method to compare the current joint positions with the reference
-  compareJointsWithReference =  async () => {
-    const currentJointPositions = this.state.exerciseDf; 
+  compareJointsWithReference = async () => {
+    const currentJointPositions = this.state.exerciseDf;
     const currentFrameIndex = currentJointPositions.length - 1; // Index of the current frame
     const referenceFrames = this.state.referenceDF.iloc([0, currentFrameIndex + 1]);
 
@@ -330,7 +330,7 @@ class Exercise extends Component {
       console.log(`cost ${jointName}_x = ${costX}`)
       // If the cost (dissimilarity) is greater than 2.5, add feedback message
       if (costX > 2.5) {
-        currentFeedbackMessages.push({message: `Adjust your ${jointNameWithSpaces} horizontally`, index: this.state.feedbackMessages.length})
+        currentFeedbackMessages.push({ message: `Adjust your ${jointNameWithSpaces} horizontally`, index: this.state.feedbackMessages.length })
       }
 
       // Compare the y-coordinates of the current joint and the reference joint
@@ -342,7 +342,7 @@ class Exercise extends Component {
       console.log(`cost ${jointName}_y = ${costY}`)
       // If the cost (dissimilarity) is greater than 2.5, add feedback message
       if (costY > 2.5) {
-        currentFeedbackMessages.push({message: `Adjust your ${jointNameWithSpaces} vertically`, index: this.state.feedbackMessages.length})
+        currentFeedbackMessages.push({ message: `Adjust your ${jointNameWithSpaces} vertically`, index: this.state.feedbackMessages.length })
       }
     }
     this.setState(prevState => ({
@@ -382,17 +382,17 @@ class Exercise extends Component {
     // Start a 10 second countdown
     let countdown = 10;
     this.setState({ countdown });
-    
+
     // Create an interval that decreases the countdown every second
     const countdownInterval = setInterval(() => {
       countdown--;
       this.setState({ countdown });
-      
+
       // If the countdown reaches 0, clear the interval and start the exercise
       if (countdown < 0) {
         clearInterval(countdownInterval);
         this.setState({ isSaving: true, isExerciseFinished: false, exerciseDf: new DataFrame(), currentFeedbackMessages: [], feedbackMessages: [], clinicalScore: null })
-        
+
         // If a reference video exists, start playing it
         if (this.referenceVideo) {
           this.setState({ referenceVideoPlaying: true, referenceVideoTime: 0 })
@@ -413,7 +413,7 @@ class Exercise extends Component {
   handleStopExercise = async () => {
     // Set the final elapsed time and reset the countdown and isSaving state
     this.setState({ isSaving: false, finalElapsedTime: this.state.elapsedTime, countdown: null })
-    
+
     // Clear the exercise timer
     if (this.state.exerciseTimer) {
       clearTimeout(this.state.exerciseTimer);
@@ -421,10 +421,10 @@ class Exercise extends Component {
     }
 
     // Convert the exercise data frame to JSON and log it
-    const json_joints = this.state.exerciseDf.to_json({orient: 'columns'})
+    const json_joints = this.state.exerciseDf.to_json({ orient: 'columns' })
     console.log(json_joints)
     console.log("total frames", this.state.exerciseDf.length)
-    
+
     // Stop the reference video
     if (this.referenceVideo) {
       this.setState({ referenceVideoPlaying: false })
@@ -443,28 +443,37 @@ class Exercise extends Component {
 
   render() {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: "hidden" }}>
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: '100vh',
+        background: 'var(--color-bg, #0D0F1A)',
+      }}>
         <TopBar />
         <Box
           display="flex"
           flexDirection="column"
           alignItems="center"
-          justifyContent="center"
-          mt={4}
-          gap={2}
+          sx={{
+            flexGrow: 1,
+            overflow: 'auto',
+            px: { xs: 2, sm: 3 },
+            py: 3,
+            gap: 2.5,
+          }}
         >
-          <VideoDisplay 
+          <VideoDisplay
             getReferenceVideo={this.getReferenceVideo}
             getVideo={this.getVideo}
             getCanvas={this.getCanvas}
             videoLoaded={this.state.videoLoaded}
             referenceVideoLoaded={this.state.referenceVideoLoaded}
           />
-          <ControlButtons 
+          <ControlButtons
             handleStartExercise={this.handleStartExercise}
             handleStopExercise={this.handleStopExercise}
           />
-          <TimeDisplay 
+          <TimeDisplay
             isSaving={this.state.isSaving}
             finalElapsedTime={Number(this.state.finalElapsedTime) ? Number(this.state.finalElapsedTime.toFixed(2)) : 0}
             elapsedTime={Number(this.state.elapsedTime) ? Number(this.state.elapsedTime.toFixed(2)) : 0}
@@ -473,9 +482,9 @@ class Exercise extends Component {
           <FeedbackDisplay
             isSaving={this.state.isSaving}
             currentFeedbackMessages={this.state.currentFeedbackMessages}
-            feedbackMessages={this.state.feedbackMessages} 
+            feedbackMessages={this.state.feedbackMessages}
             isExerciseFinished={this.state.isExerciseFinished}
-            clinicalScore={this.state.clinicalScore} 
+            clinicalScore={this.state.clinicalScore}
           />
         </Box>
       </div>
@@ -484,18 +493,18 @@ class Exercise extends Component {
 }
 
 Exercise.propTypes = {
-    videoWidth: PropTypes.number,
-    videoHeight: PropTypes.number,
-    flipHorizontal: PropTypes.bool,
-    flipVertical: PropTypes.bool,
-    showVideo: PropTypes.bool,
-    loadingText: PropTypes.string,
-    router: PropTypes.shape({
-      location: PropTypes.shape({
-          state: PropTypes.shape({
-              exercise: PropTypes.object.isRequired,
-          }).isRequired,
+  videoWidth: PropTypes.number,
+  videoHeight: PropTypes.number,
+  flipHorizontal: PropTypes.bool,
+  flipVertical: PropTypes.bool,
+  showVideo: PropTypes.bool,
+  loadingText: PropTypes.string,
+  router: PropTypes.shape({
+    location: PropTypes.shape({
+      state: PropTypes.shape({
+        exercise: PropTypes.object.isRequired,
       }).isRequired,
+    }).isRequired,
   }).isRequired,
 }
 
