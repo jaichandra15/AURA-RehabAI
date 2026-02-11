@@ -1,9 +1,7 @@
 // Importing necessary libraries and components
 import { Component } from 'react'
 import PropTypes from 'prop-types'
-import * as tf from '@tensorflow/tfjs'
-import '@tensorflow/tfjs-backend-webgl'
-import * as poseDetection from '@tensorflow-models/pose-detection'
+import { Pose } from '@mediapipe/pose'
 import { DataFrame } from 'pandas-js'
 
 // Custom components
@@ -101,22 +99,27 @@ class Exercise extends Component {
     }
 
     try {
-      const detectorConfig = { modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER }
+      // Initialize MediaPipe Pose model (runs efficiently on a wide range of devices)
+      this.pose = new Pose({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`,
+      })
 
-      // Set the tf backend
-      console.log("awaiting tf")
-      await tf.setBackend('webgl')
-      await tf.ready()
-      console.log("using tf backend:", tf.getBackend());
-      console.log("tf setup")
+      this.pose.setOptions({
+        modelComplexity: 1, // balanced accuracy vs speed for older devices
+        smoothLandmarks: true,
+        enableSegmentation: false,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+      })
 
-      // Load the MoveNet pose detector
-      this.movenet = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, detectorConfig)
-      console.log("movenet setup")
+      // Handle pose results: map MediaPipe landmarks to the 17 MoveNet-style joints
+      this.pose.onResults((results) => {
+        this.handlePoseResults(results)
+      })
 
       // Create an instance of the canvas renderer
       this.renderer = new RendererCanvas2d(this.canvas)
-      console.log("renderer setup")
+      console.log("MediaPipe Pose and renderer setup")
     } catch (error) {
       throw new Error(error)
     }
@@ -194,16 +197,30 @@ class Exercise extends Component {
   detectPose() {
     const { videoWidth, videoHeight } = this.props
     const canvas = this.canvas
-    const canvasContext = canvas.getContext('2d')
 
     canvas.width = videoWidth
     canvas.height = videoHeight
 
-    this.poseDetectionFrame(canvasContext)
+    this.poseDetectionFrame()
   }
 
-  // Method to detect pose in each frame
-  poseDetectionFrame(canvasContext) {
+  // Method to detect pose in each frame using MediaPipe Pose
+  poseDetectionFrame() {
+    const video = this.video
+
+    const findPoseDetectionFrame = async () => {
+      if (this.pose && video && video.readyState >= 2) {
+        await this.pose.send({ image: video })
+      }
+      // Request the next animation frame
+      requestAnimationFrame(findPoseDetectionFrame)
+    }
+    // Call the function to start pose detection
+    findPoseDetectionFrame()
+  }
+
+  // Handle pose results from MediaPipe Pose and keep the same 17-joint schema
+  handlePoseResults(results) {
     const {
       flipHorizontal,
       flipVertical,
@@ -212,53 +229,80 @@ class Exercise extends Component {
       showVideo,
     } = this.props
 
-    const movenetModel = this.movenet
     const video = this.video
+    const canvas = this.canvas
+    const canvasContext = canvas.getContext('2d')
 
-    // Function to find pose in each frame
-    const findPoseDetectionFrame = async () => {
-      let poses = null
+    let poses = []
+    let normalizedKeypoints = null
 
-      // Estimate poses in the current video frame
-      poses = await movenetModel.estimatePoses(video, { flipHorizontal: flipHorizontal, flipVertical: flipVertical })
+    if (results.poseLandmarks && results.poseLandmarks.length > 0) {
+      const lm = results.poseLandmarks
 
-      let normalizedKeypoints = null
-      if (poses[0]) {
-        // Convert keypoints to normalized keypoints
-        normalizedKeypoints = poseDetection.calculators.keypointsToNormalizedKeypoints(poses[0].keypoints, video);
-      }
+      // Map MediaPipe's 33 landmarks to the 17 joints used throughout the app
+      const orderedLandmarks = [
+        lm[0],  // nose
+        lm[2],  // left_eye
+        lm[5],  // right_eye
+        lm[7],  // left_ear
+        lm[8],  // right_ear
+        lm[11], // left_shoulder
+        lm[12], // right_shoulder
+        lm[13], // left_elbow
+        lm[14], // right_elbow
+        lm[15], // left_wrist
+        lm[16], // right_wrist
+        lm[23], // left_hip
+        lm[24], // right_hip
+        lm[25], // left_knee
+        lm[26], // right_knee
+        lm[27], // left_ankle
+        lm[28], // right_ankle
+      ]
 
-      // If the exercise data is being saved, populate the DataFrame
-      if (this.state.isSaving) {
-        if (poses[0]) {
-          this.populateDataFrame(normalizedKeypoints)
-        }
-        if (!this.state.startTime) {
-          this.setState({ startTime: Date.now() }) // start timer when saving begins
-        } else {
-          this.setState({ elapsedTime: (Date.now() - this.state.startTime) / 1000 }) // update elapsed time in seconds
-        }
-      } else {
-        this.setState({ lastExerciseElapsedTime: this.state.elapsedTime })
-        this.setState({ startTime: null, elapsedTime: 0 }) // reset timer when saving stops
-      }
+      normalizedKeypoints = orderedLandmarks.map((kp) => ({
+        x: kp.x,
+        y: kp.y,
+        score: kp.visibility != null ? kp.visibility : 1,
+      }))
 
-      canvasContext.clearRect(0, 0, videoWidth, videoHeight)
+      const pixelKeypoints = orderedLandmarks.map((kp) => ({
+        x: kp.x * videoWidth,
+        y: kp.y * videoHeight,
+        score: kp.visibility != null ? kp.visibility : 1,
+      }))
 
-      if (showVideo) {
-        canvasContext.save()
-        // Scale and translate the canvas context to flip the video
-        canvasContext.scale(-1, 1)
-        canvasContext.translate(-videoWidth, 0)
-        canvasContext.drawImage(video, 0, 0, videoWidth, videoHeight) // Draw the video on the canvas
-        this.renderer.drawResults(poses) // Draw the detected poses on the canvas
-        canvasContext.restore()
-      }
-      // Request the next animation frame
-      requestAnimationFrame(findPoseDetectionFrame)
+      poses = [{ keypoints: pixelKeypoints }]
     }
-    // Call the function to start pose detection
-    findPoseDetectionFrame()
+
+    // If the exercise data is being saved, populate the DataFrame
+    if (this.state.isSaving) {
+      if (normalizedKeypoints) {
+        this.populateDataFrame(normalizedKeypoints)
+      }
+      if (!this.state.startTime) {
+        this.setState({ startTime: Date.now() }) // start timer when saving begins
+      } else {
+        this.setState({ elapsedTime: (Date.now() - this.state.startTime) / 1000 }) // update elapsed time in seconds
+      }
+    } else {
+      this.setState({ lastExerciseElapsedTime: this.state.elapsedTime })
+      this.setState({ startTime: null, elapsedTime: 0 }) // reset timer when saving stops
+    }
+
+    canvasContext.clearRect(0, 0, videoWidth, videoHeight)
+
+    if (showVideo) {
+      canvasContext.save()
+      // Scale and translate the canvas context to flip the video
+      canvasContext.scale(-1, 1)
+      canvasContext.translate(-videoWidth, 0)
+      canvasContext.drawImage(video, 0, 0, videoWidth, videoHeight) // Draw the video on the canvas
+      if (poses.length > 0) {
+        this.renderer.drawResults(poses) // Draw the detected poses on the canvas
+      }
+      canvasContext.restore()
+    }
   }
 
   // Method to populate the DataFrame with keypoints
@@ -443,24 +487,15 @@ class Exercise extends Component {
 
   render() {
     return (
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100vh',
-        background: 'var(--color-bg, #0D0F1A)',
-      }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: "hidden" }}>
         <TopBar />
         <Box
           display="flex"
           flexDirection="column"
           alignItems="center"
-          sx={{
-            flexGrow: 1,
-            overflow: 'auto',
-            px: { xs: 2, sm: 3 },
-            py: 3,
-            gap: 2.5,
-          }}
+          justifyContent="center"
+          mt={4}
+          gap={2}
         >
           <VideoDisplay
             getReferenceVideo={this.getReferenceVideo}
