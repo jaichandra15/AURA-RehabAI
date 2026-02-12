@@ -192,30 +192,14 @@ async def login(user: UserLoginBase, db: db_dependency, response: Response):
     db.commit()
     db.refresh(db_user)
 
-    response.set_cookie(key="session_token", value=session, httponly=True)
+    response.set_cookie(key="session_token", value=session, httponly=True, samesite="lax", secure=False)
     return {"message": "Login successful", "session_id": str(session)}
 
 
 @app.get("/api/exercises/")
-async def get_exercises(
-    db: db_dependency, current_user: models.User = Depends(get_current_user)
-):
-    # Get the user's assigned exercises
-    assigned_exercises = (
-        db.query(models.AssignedExercise)
-        .filter(models.AssignedExercise.user_id == current_user.user_id)
-        .all()
-    )
-    # Get the exercise data for each assigned exercise
-    exercises = []
-    for assigned_exercise in assigned_exercises:
-        exercise = (
-            db.query(models.Exercise)
-            .filter(models.Exercise.exercise_id == assigned_exercise.exercise_id)
-            .first()
-        )
-        exercises.append(exercise)
-
+async def get_exercises(db: db_dependency):
+    # Return all exercises for every user
+    exercises = db.query(models.Exercise).all()
     return exercises
 
 
