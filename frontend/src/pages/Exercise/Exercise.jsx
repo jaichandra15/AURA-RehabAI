@@ -15,6 +15,7 @@ import VideoDisplay from '../../components/VideoDisplay';
 // Renderer and utility functions
 import { RendererCanvas2d } from './renderer_canvas2d'
 import { csvToJSON } from './utils'
+import { compareJointsWithDTW } from '../../utils/dtwLocal'
 
 // Higher order component for routing
 import { withRouter } from './withRouter.jsx'
@@ -298,6 +299,16 @@ class Exercise extends Component {
       canvasContext.scale(-1, 1)
       canvasContext.translate(-videoWidth, 0)
       canvasContext.drawImage(video, 0, 0, videoWidth, videoHeight) // Draw the video on the canvas
+
+      // Draw ghost skeleton FIRST (background layer) when exercise is active
+      if (this.state.isSaving && this.state.referenceDF) {
+        const frameIndex = this.state.exerciseDf.length - 1;
+        if (frameIndex >= 0) {
+          this.renderer.drawGhostSkeleton(this.state.referenceDF, frameIndex);
+        }
+      }
+
+      // Draw live skeleton SECOND (foreground layer)
       if (poses.length > 0) {
         this.renderer.drawResults(poses) // Draw the detected poses on the canvas
       }
@@ -325,75 +336,34 @@ class Exercise extends Component {
     });
   }
 
-  // Method to get the DTW value between the current and reference joint values
-  getDTWCost = async (currentJointValues, referenceJointValues) => {
-    // Get the exercise information from the router state
-    const exerciseInfo = this.props.router.location.state.exercise
-
-    try {
-      const response = await api.post(`/api/feedback/${exerciseInfo.exercise_id}/`, {
-        referenceJointValues: referenceJointValues,
-        currentJointValues: currentJointValues
-      })
-
-      console.log(response.data)
-
-      if (response.data) {
-        console.log(response.data.feedback_dtw[0])
-        return response.data.feedback_dtw[0]
-      } else {
-        console.error('No data returned from DTW API')
-      }
-    } catch (error) {
-      console.error('Failed to fetch dtw:', error)
-    }
-  }
-
-  // Method to compare the current joint positions with the reference
+  // Method to compare the current joint positions with the reference using LOCAL DTW
   compareJointsWithReference = async () => {
     const currentJointPositions = this.state.exerciseDf;
     const currentFrameIndex = currentJointPositions.length - 1; // Index of the current frame
     const referenceFrames = this.state.referenceDF.iloc([0, currentFrameIndex + 1]);
 
-    let currentFeedbackMessages = [];
-    console.log("frame", currentJointPositions.length, ":")
-    for (const [jointName, jointIndex] of Object.entries(this.state.keypoint_dict)) {
-      // Comparing important joints only
-      if (jointIndex <= 4 || jointIndex > 12) {
-        continue;
-      }
+    // Performance measurement
+    const startTime = performance.now();
 
-      const jointNameWithSpaces = jointName.replace(/_/g, ' ');
+    // Use local DTW computation (no API call needed!)
+    const currentFeedbackMessages = compareJointsWithDTW(
+      currentJointPositions,
+      referenceFrames,
+      this.state.keypoint_dict
+    );
 
-      // Compare the x-coordinates of the current joint and the reference joint
-      const col_x = jointName + '_x'
-      const currentJointXValues = currentJointPositions.get(col_x).values.toArray();
-      const referenceJointXValues = referenceFrames.get(col_x).values.toArray();
+    const endTime = performance.now();
+    console.log(`Local DTW computation: ${(endTime - startTime).toFixed(2)}ms for frame ${currentJointPositions.length}`);
 
-      const costX = await this.getDTWCost(currentJointXValues, referenceJointXValues);
-      console.log(`cost ${jointName}_x = ${costX}`)
-      // If the cost (dissimilarity) is greater than 2.5, add feedback message
-      if (costX > 2.5) {
-        currentFeedbackMessages.push({ message: `Adjust your ${jointNameWithSpaces} horizontally`, index: this.state.feedbackMessages.length })
-      }
+    // Add index for tracking
+    currentFeedbackMessages.forEach((msg, idx) => {
+      msg.index = this.state.feedbackMessages.length + idx;
+    });
 
-      // Compare the y-coordinates of the current joint and the reference joint
-      const col_y = jointName + '_y'
-      const currentJointYValues = currentJointPositions.get(col_y).values.toArray();
-      const referenceJointYValues = referenceFrames.get(col_y).values.toArray();
-
-      const costY = await this.getDTWCost(currentJointYValues, referenceJointYValues);
-      console.log(`cost ${jointName}_y = ${costY}`)
-      // If the cost (dissimilarity) is greater than 2.5, add feedback message
-      if (costY > 2.5) {
-        currentFeedbackMessages.push({ message: `Adjust your ${jointNameWithSpaces} vertically`, index: this.state.feedbackMessages.length })
-      }
-    }
     this.setState(prevState => ({
       currentFeedbackMessages: currentFeedbackMessages,
       feedbackMessages: [...prevState.feedbackMessages, ...currentFeedbackMessages]
     }));
-    console.log(" ")
   }
 
   // Method to fetch the clinical score for the exercise

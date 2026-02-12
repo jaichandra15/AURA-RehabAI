@@ -19,7 +19,7 @@
  */
 import * as posedetection from '@tensorflow-models/pose-detection';
 
-const DEFAULT_LINE_WIDTH = 2; 
+const DEFAULT_LINE_WIDTH = 2;
 const DEFAULT_RADIUS = 4;
 const MODEL = posedetection.SupportedModels.MoveNet;
 const SCORE_THRESHOLD = 0.3;
@@ -28,7 +28,7 @@ const SCORE_THRESHOLD = 0.3;
 export class RendererCanvas2d {
   constructor(canvas) {
     this.ctx = canvas.getContext('2d');
-    
+
     this.videoWidth = canvas.width;
     this.videoHeight = canvas.height;
   }
@@ -124,7 +124,7 @@ export class RendererCanvas2d {
     this.ctx.strokeStyle = 'White';
     this.ctx.lineWidth = DEFAULT_LINE_WIDTH;
 
-    posedetection.util.getAdjacentPairs(MODEL).forEach(([ i, j ]) => {
+    posedetection.util.getAdjacentPairs(MODEL).forEach(([i, j]) => {
       const kp1 = keypoints[i];
       const kp2 = keypoints[j];
 
@@ -140,5 +140,72 @@ export class RendererCanvas2d {
         this.ctx.stroke();
       }
     });
+  }
+
+  /**
+   * Draw reference skeleton as translucent overlay (Ghost Skeleton)
+   * Provides visual guidance by showing expert demonstration
+   * @param {Object} referenceDF - DataFrame with reference joint positions
+   * @param {number} frameIndex - Current frame in reference sequence
+   */
+  drawGhostSkeleton(referenceDF, frameIndex) {
+    // Ensure we have valid data
+    if (!referenceDF || frameIndex < 0 || frameIndex >= referenceDF.length) {
+      return;
+    }
+
+    const ghostKeypoints = this.mapReferenceToKeypoints(referenceDF, frameIndex);
+
+    // Save current context state
+    this.ctx.save();
+
+    // Semi-transparent green for reference skeleton
+    this.ctx.globalAlpha = 0.4;
+    this.ctx.fillStyle = 'LimeGreen';
+    this.ctx.strokeStyle = 'LimeGreen';
+    this.ctx.lineWidth = 3;
+
+    // Draw ghost skeleton
+    this.drawKeypoints(ghostKeypoints);
+    this.drawSkeleton(ghostKeypoints);
+
+    // Restore context
+    this.ctx.restore();
+  }
+
+  /**
+   * Map reference CSV data to MediaPipe keypoint format
+   * Converts DataFrame row to array of keypoint objects
+   * @param {Object} referenceDF - DataFrame with reference positions
+   * @param {number} frameIndex - Frame index to extract
+   * @returns {Array} Keypoints in {x, y, score} format
+   */
+  mapReferenceToKeypoints(referenceDF, frameIndex) {
+    // Get the specific frame (iloc is 0-indexed, end is exclusive)
+    const row = referenceDF.iloc([frameIndex, frameIndex + 1]);
+    const keypoints = [];
+
+    // Map 17 joints from reference CSV to keypoint format
+    const jointNames = [
+      'nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear',
+      'left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow',
+      'left_wrist', 'right_wrist', 'left_hip', 'right_hip',
+      'left_knee', 'right_knee', 'left_ankle', 'right_ankle'
+    ];
+
+    // Convert normalized coordinates (0-1) to pixel coordinates
+    jointNames.forEach(joint => {
+      const x = row.get(`${joint}_x`).values[0];
+      const y = row.get(`${joint}_y`).values[0];
+      const score = row.get(`${joint}_confidence`).values[0];
+
+      keypoints.push({
+        x: x * this.videoWidth,
+        y: y * this.videoHeight,
+        score: score
+      });
+    });
+
+    return keypoints;
   }
 }
